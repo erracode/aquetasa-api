@@ -8,7 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "aquetasa-db"
-database_id = "your-database-id-here"
+database_id = "bce4b7a9-e714-492d-a031-e417f956af04"
 
 [triggers]
 crons = ["*/15 * * * *"]
