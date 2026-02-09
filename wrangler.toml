@@ -1,0 +1,23 @@
+name = "aquetasa-api"
+main = "src/index.ts"
+compatibility_date = "2024-12-18"
+
+# Enable Node.js compatibility
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "aquetasa-db"
+database_id = "your-database-id-here"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Rate limiting configuration
+[vars]
+RATE_LIMIT_PER_MINUTE = "30"
+CACHE_TTL_SECONDS = "300"
+DOLAR_API_URL = "https://ve.dolarapi.com/v1/dolares"
+
+# Environment variables (use `wrangler secret put` for these)
+# - ALLOWED_ORIGINS: comma-separated list of allowed CORS origins
