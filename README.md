@@ -5,6 +5,7 @@ Backend service for caching and serving dollar exchange rates for Venezuela.
 ## Features
 
 - **Rate Caching**: Fetches rates from dolarapi.com every 15 minutes
+- **Binance P2P**: Fetches USDT/VES rates from Binance P2P market
 - **Dual Cache Layer**: In-memory cache + D1 database persistence
 - **Rate Limiting**: 30 requests/minute per IP
 - **Fallback Strategy**: Returns stale cache if API is unavailable
@@ -43,6 +44,50 @@ Health check endpoint.
   "timestamp": "2026-02-09T21:01:25.501Z",
   "database": "connected",
   "version": "1.0.0"
+}
+```
+
+### GET /binance/usdt-ves
+Returns current USDT/VES rate from Binance P2P.
+
+**Response:**
+```json
+{
+  "data": {
+    "fiat": "VES",
+    "asset": "USDT",
+    "tradeType": "BUY",
+    "averagePrice": 84.50,
+    "medianPrice": 84.45,
+    "prices": [84.20, 84.45, 84.50, 84.60, 84.80],
+    "timestamp": "2026-02-09T21:01:25.501Z"
+  },
+  "source": "binance-p2p"
+}
+```
+
+### GET /binance/history?limit=24
+Returns historical USDT/VES rates.
+
+**Query Parameters:**
+- `limit` (optional): Number of records to return (default: 24)
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "fiat": "VES",
+      "asset": "USDT",
+      "tradeType": "BUY",
+      "averagePrice": 84.50,
+      "medianPrice": 84.45,
+      "prices": [84.20, 84.45, 84.50],
+      "timestamp": "2026-02-09T21:01:25.501Z"
+    }
+  ],
+  "source": "binance-p2p",
+  "count": 1
 }
 ```
 
@@ -92,9 +137,10 @@ bun run dev
 └──────────────┘     └─────────────────┘     └──────────────┘
                             │
                             ▼
-                     ┌──────────────┐
-                     │ dolarapi.com │
-                     └──────────────┘
+              ┌─────────────────────────────┐
+              │    dolarapi.com (BCV)       │
+              │    Binance P2P (USDT/VES)   │
+              └─────────────────────────────┘
 ```
 
 ## Cache Strategy
