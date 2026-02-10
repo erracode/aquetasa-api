@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { Env } from '../index'
+import { binanceP2PService } from '../services/binanceP2P'
 
 // Scheduled task handler - runs every 15 minutes via cron trigger
 export async function scheduled(
@@ -7,7 +8,10 @@ export async function scheduled(
   env: Env['Bindings'],
   ctx: ExecutionContext
 ): Promise<void> {
-  ctx.waitUntil(updateRatesCache(env))
+  ctx.waitUntil(Promise.all([
+    updateRatesCache(env),
+    updateBinanceP2PRates(env)
+  ]))
 }
 
 async function updateRatesCache(env: Env['Bindings']): Promise<void> {
@@ -43,6 +47,43 @@ async function updateRatesCache(env: Env['Bindings']): Promise<void> {
     
   } catch (error) {
     console.error('Failed to update rates cache:', error)
+    // Don't throw - we don't want to fail the cron job permanently
+  }
+}
+
+async function updateBinanceP2PRates(env: Env['Bindings']): Promise<void> {
+  try {
+    console.log('Running scheduled Binance P2P update...')
+    
+    // Fetch USDT/VES from Binance P2P
+    const rate = await binanceP2PService.getUSDTVES()
+    
+    if (!rate) {
+      console.error('Failed to fetch Binance P2P rate')
+      return
+    }
+    
+    // Store in D1
+    await env.DB
+      .prepare(`
+        INSERT INTO binance_p2p_rates (fiat, asset, trade_type, average_price, median_price, prices, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        rate.fiat,
+        rate.asset,
+        rate.tradeType,
+        rate.averagePrice,
+        rate.medianPrice,
+        JSON.stringify(rate.prices),
+        rate.timestamp
+      )
+      .run()
+    
+    console.log(`Binance P2P rate updated: ${rate.medianPrice} VES/USDT`)
+    
+  } catch (error) {
+    console.error('Failed to update Binance P2P rates:', error)
     // Don't throw - we don't want to fail the cron job permanently
   }
 }

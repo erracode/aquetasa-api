@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { ratesRouter } from './routes/rates'
 import { healthRouter } from './routes/health'
+import { binanceRouter } from './routes/binance'
 import { rateLimitMiddleware } from './middleware/rateLimit'
 import { errorHandler } from './middleware/errorHandler'
 import { scheduled } from './routes/cron'
@@ -38,6 +39,7 @@ app.onError(errorHandler)
 // Routes
 app.route('/rates', ratesRouter)
 app.route('/health', healthRouter)
+app.route('/binance', binanceRouter)
 
 // 404 handler
 app.notFound((c) => {
