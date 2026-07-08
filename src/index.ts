@@ -26,7 +26,7 @@ export type Env = {
 const app = new Hono<Env>()
 
 app.use(logger())
-app.use("*", cors({ origin: "*", allowMethods: ["GET", "POST", "OPTIONS"], allowHeaders: ["Content-Type"] }))
+app.use("*", cors({ origin: ["https://aquetasa.app"], allowMethods: ["GET", "POST", "OPTIONS"], allowHeaders: ["Content-Type", "X-Cron-API-Key"] }))
 app.use(rateLimitMiddleware)
 app.onError(errorHandler)
 
@@ -52,6 +52,18 @@ app.post("/register-push-token", async (c) => {
     if (!token || !platform) return c.json({ error: "Missing" }, 400)
     const ns = new NotificationService(c.env)
     await ns.registerPushToken(token, platform)
+    return c.json({ success: true })
+  } catch (e) {
+    return c.json({ error: "Failed" }, 500)
+  }
+})
+
+app.post("/deregister-push-token", async (c) => {
+  try {
+    const { token } = await c.req.json()
+    if (!token) return c.json({ error: "Missing token" }, 400)
+    const ns = new NotificationService(c.env)
+    await ns.removePushToken(token)
     return c.json({ success: true })
   } catch (e) {
     return c.json({ error: "Failed" }, 500)

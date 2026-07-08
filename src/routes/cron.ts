@@ -6,8 +6,12 @@ import { NotificationService, CurrentRates } from '../services/notificationServi
 import { RateStorageService } from '../services/rateStorage'
 import { WidgetCacheService } from '../services/widgetCache'
 
-// Skip auth for testing
+// Require API key for cron trigger endpoints
 const requireApiKey: MiddlewareHandler = async (c, next) => {
+  const key = c.req.header('X-Cron-API-Key')
+  if (key !== c.env.CRON_API_KEY) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
   await next()
 }
 
@@ -53,7 +57,6 @@ async function updateBCVRates(env: Env['Bindings']): Promise<void> {
     }
     
     const usdChanged = await storage.hasRateChanged('USD', rates.USD)
-    const eurChanged = await storage.hasRateChanged('EUR', rates.EUR)
     
     if (usdChanged) {
       await storage.storeRate({
@@ -66,15 +69,22 @@ async function updateBCVRates(env: Env['Bindings']): Promise<void> {
       console.log(`USD rate stored: ${rates.USD}`)
     }
     
-    if (eurChanged) {
-      await storage.storeRate({
-        source: 'bcv',
-        currency: 'EUR',
-        rateType: 'official',
-        avgRate: rates.EUR,
-        rawData: { scraped_at: new Date().toISOString() }
-      })
-      console.log(`EUR rate stored: ${rates.EUR}`)
+    // Only store EUR if it was actually scraped (fallback returns EUR: 0)
+    if (rates.EUR && rates.EUR > 0) {
+      const eurChanged = await storage.hasRateChanged('EUR', rates.EUR)
+      
+      if (eurChanged) {
+        await storage.storeRate({
+          source: 'bcv',
+          currency: 'EUR',
+          rateType: 'official',
+          avgRate: rates.EUR,
+          rawData: { scraped_at: new Date().toISOString() }
+        })
+        console.log(`EUR rate stored: ${rates.EUR}`)
+      }
+    } else {
+      console.log('EUR rate not available from BCV, keeping previous value')
     }
     
     if (usdChanged || eurChanged) {

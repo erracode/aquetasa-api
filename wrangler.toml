@@ -10,14 +10,23 @@ binding = "DB"
 database_name = "aquetasa-db"
 database_id = "bce4b7a9-e714-492d-a031-e417f956af04"
 
+[[kv_namespaces]]
+binding = "RATES_KV"
+id = "741322d66a47411b9f44929991e0bf2c"
+
 [triggers]
-crons = ["*/15 * * * *"]
+crons = [
+  "0 9,11,13,17,19 * * *",   # BCV: 9, 11 AM, 1, 5, 7 PM VET (UTC-4)
+  "0 */4 * * *",              # USDT: Every 4 hours
+  "0,30 * * * *"              # Widget cache: Every 30 minutes
+]
 
 # Rate limiting configuration
 [vars]
 RATE_LIMIT_PER_MINUTE = "30"
 CACHE_TTL_SECONDS = "300"
 DOLAR_API_URL = "https://ve.dolarapi.com/v1/dolares"
+# CRON_API_KEY is stored as a secret (use `wrangler secret put CRON_API_KEY`)
 
 # Environment variables (use `wrangler secret put` for these)
 # - ALLOWED_ORIGINS: comma-separated list of allowed CORS origins

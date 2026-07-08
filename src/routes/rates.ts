@@ -21,122 +21,113 @@ let memoryCache: CachedRates | null = null
 
 export const ratesRouter = new Hono<Env>()
 
-// GET /rates - Get current exchange rates
+// GET /rates - Get current exchange rates (consolidated BCV + USDT)
 ratesRouter.get('/', async (c) => {
   const db = c.env.DB
-  const cacheTTL = parseInt(c.env.CACHE_TTL_SECONDS || '300') * 1000 // Convert to ms
   const now = new Date()
   
-  // Check memory cache first (fastest)
-  if (memoryCache) {
-    const expiresAt = new Date(memoryCache.expiresAt)
-    if (expiresAt > now) {
-      return c.json({
-        data: memoryCache.data,
-        source: 'memory-cache',
-        cachedAt: memoryCache.cachedAt
-      })
-    }
-  }
-  
-  // Check D1 cache
   try {
-    const dbCache = await db
-      .prepare('SELECT data, cached_at FROM rates_cache WHERE id = 1')
-      .first<{ data: string; cached_at: string }>()
-    
-    if (dbCache) {
-      const cachedAt = new Date(dbCache.cached_at)
-      const age = now.getTime() - cachedAt.getTime()
-      
-      if (age < cacheTTL) {
-        const data = JSON.parse(dbCache.data) as ExchangeRate[]
-        
-        // Update memory cache
-        memoryCache = {
-          data,
-          cachedAt: dbCache.cached_at,
-          expiresAt: new Date(cachedAt.getTime() + cacheTTL).toISOString()
+    // Query latest rates for each currency
+    const results = await db.prepare(`
+      SELECT 
+        e.source,
+        e.currency,
+        e.rate_type,
+        e.buy_rate,
+        e.sell_rate,
+        e.avg_rate,
+        e.fetched_at
+      FROM exchange_rates e
+      INNER JOIN (
+        SELECT currency, MAX(fetched_at) as max_fetched
+        FROM exchange_rates
+        WHERE currency IN ('USD', 'EUR', 'USDT')
+        GROUP BY currency
+      ) latest ON e.currency = latest.currency AND e.fetched_at = latest.max_fetched
+      ORDER BY 
+        CASE e.currency
+          WHEN 'USD' THEN 1
+          WHEN 'EUR' THEN 2
+          WHEN 'USDT' THEN 3
+        END
+    `).all<{
+      source: string
+      currency: string
+      rate_type: string
+      buy_rate: number | null
+      sell_rate: number | null
+      avg_rate: number
+      fetched_at: string
+    }>()
+
+    const combinedRates: ExchangeRate[] = []
+
+    for (const row of results.results || []) {
+      let rate: ExchangeRate
+
+      if (row.currency === 'USD') {
+        rate = {
+          fuente: 'oficial',
+          nombre: 'Oficial',
+          compra: row.buy_rate,
+          venta: row.sell_rate,
+          promedio: row.avg_rate,
+          fechaActualizacion: row.fetched_at,
         }
-        
-        return c.json({
-          data,
-          source: 'db-cache',
-          cachedAt: dbCache.cached_at
-        })
+      } else if (row.currency === 'EUR') {
+        rate = {
+          fuente: 'euro',
+          nombre: 'Euro BCV',
+          compra: row.buy_rate,
+          venta: row.sell_rate,
+          promedio: row.avg_rate,
+          fechaActualizacion: row.fetched_at,
+        }
+      } else if (row.currency === 'USDT') {
+        rate = {
+          fuente: 'usdt',
+          nombre: 'USDT (P2P)',
+          compra: row.buy_rate,
+          venta: row.sell_rate,
+          promedio: row.avg_rate,
+          fechaActualizacion: row.fetched_at,
+        }
+      } else {
+        continue
       }
+
+      combinedRates.push(rate)
     }
-  } catch (error) {
-    console.error('Database cache error:', error)
-  }
-  
-  // Fetch from external API
-  try {
-    const response = await fetch(c.env.DOLAR_API_URL)
-    
-    if (!response.ok) {
-      throw new Error(`External API error: ${response.status}`)
+
+    if (combinedRates.length === 0) {
+      return c.json(
+        {
+          error: 'No exchange rate data available',
+          data: [],
+          source: 'error',
+          cachedAt: now.toISOString(),
+        },
+        503
+      )
     }
-    
-    const data: ExchangeRate[] = await response.json()
-    const cachedAt = now.toISOString()
-    
-    // Store in D1 cache
-    try {
-      await db
-        .prepare(`
-          INSERT INTO rates_cache (id, data, cached_at) 
-          VALUES (1, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET 
-            data = excluded.data,
-            cached_at = excluded.cached_at
-        `)
-        .bind(JSON.stringify(data), cachedAt)
-        .run()
-    } catch (error) {
-      console.error('Failed to update DB cache:', error)
-    }
-    
-    // Update memory cache
-    memoryCache = {
-      data,
-      cachedAt,
-      expiresAt: new Date(now.getTime() + cacheTTL).toISOString()
-    }
-    
+
     return c.json({
-      data,
+      data: combinedRates,
       source: 'api',
-      cachedAt
+      cachedAt: now.toISOString(),
     })
   } catch (error) {
-    // Return stale cache if available
-    if (memoryCache) {
-      return c.json({
-        data: memoryCache.data,
-        source: 'memory-cache-stale',
-        cachedAt: memoryCache.cachedAt,
-        warning: 'Using stale data - API unavailable'
-      })
-    }
-    
-    try {
-      const staleCache = await db
-        .prepare('SELECT data, cached_at FROM rates_cache WHERE id = 1')
-        .first<{ data: string; cached_at: string }>()
-      
-      if (staleCache) {
-        return c.json({
-          data: JSON.parse(staleCache.data) as ExchangeRate[],
-          source: 'db-cache-stale',
-          cachedAt: staleCache.cached_at,
-          warning: 'Using stale data - API unavailable'
-        })
-      }
-    } catch (dbError) {
-      console.error('Database error:', dbError)
-    }
-    
-    throw new Error('Failed to fetch rates and no cache available')
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error('Error fetching consolidated rates:', errorMessage)
+    return c.json(
+      {
+        error: 'Failed to fetch exchange rates',
+        message: errorMessage,
+        data: [],
+        source: 'error',
+        cachedAt: now.toISOString(),
+      },
+      500
+    )
   }
 })

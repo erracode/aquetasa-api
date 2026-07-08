@@ -77,8 +77,8 @@ export class BCVScraper {
 
     // Pattern: <div id="euro">...<span> EUR </span>...<strong> VALUE </strong>
     //         <div id="dolar">...<span> USD </span>...<strong> VALUE </strong>
-    const euroMatch = html.match(/<div[^>]*id="euro"[^>]*>[\s\S]*?<span>\s*EUR\s*<\/span>[\s\S]*?<strong>\s*([\d.,]+)/i)
-    const dolarMatch = html.match(/<div[^>]*id="dolar"[^>]*>[\s\S]*?<span>\s*USD\s*<\/span>[\s\S]*?<strong>\s*([\d.,]+)/i)
+    const euroMatch = html.match(/<div[^>]*id="euro"[^>]*>[\s\S]*?<span>\s*EUR\s*<\/span>[\s\S]*?<strong[^>]*>\s*([\d.,]+)/i)
+    const dolarMatch = html.match(/<div[^>]*id="dolar"[^>]*>[\s\S]*?<span>\s*USD\s*<\/span>[\s\S]*?<strong[^>]*>\s*([\d.,]+)/i)
 
     if (euroMatch) {
       rates.EUR = this.parseValue(euroMatch[1])
@@ -145,7 +145,7 @@ export async function fetchBCVFromDolarAPI(): Promise<BCVRates> {
     
     return {
       USD: data.promedio || data.venta || data.compra || 0,
-      EUR: 0
+      EUR: 0 // DolarAPI solo provee USD, no EUR
     }
   } catch (error) {
     console.error('DolarAPI fallback error:', error)
